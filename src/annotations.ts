@@ -23,7 +23,9 @@ export type PrimitiveType =
     "uint64" |
     "float32" |
     "float64" |
-    typeof Schema;
+    typeof Schema |
+    typeof ArraySchema |
+    typeof MapSchema;
 
 export type DefinitionType = ( PrimitiveType | PrimitiveType[] | { map: PrimitiveType });
 export type Definition = { [field: string]: DefinitionType };
@@ -172,7 +174,7 @@ export abstract class Schema {
                 value.decode(bytes, it);
                 hasChange = true;
 
-            } else if (Array.isArray(type)) {
+            } else if (type === ArraySchema) {
                 type = type[0];
                 change = [];
 
@@ -258,7 +260,7 @@ export abstract class Schema {
                 }
 
 
-            } else if ((type as any).map) {
+            } else if (type === MapSchema) {
                 type = (type as any).map;
 
                 const valueRef: MapSchema = this[`_${field}`] || new MapSchema();
@@ -605,8 +607,7 @@ export class Reflection extends Schema {
 
                 } else {
                     const isSchema = typeof (schema[fieldName]) === "function";
-                    const isArray = Array.isArray(schema[fieldName]);
-                    // const isMap = !isArray && (schema[fieldName] as any).map;
+                    const isArray = schema[fieldName] === ArraySchema;
 
                     fieldType = (isArray) 
                         ? "array" 
@@ -707,7 +708,7 @@ export class Reflection extends Schema {
 /**
  * Decorators / Proxies
  */
-export function type (type: DefinitionType) {
+export function type (type: DefinitionType, childType?: DefinitionType) {
     return function (target: any, field: string) {
         const constructor = target.constructor as typeof Schema;
 
@@ -721,13 +722,7 @@ export function type (type: DefinitionType) {
         constructor._indexes[field] = Object.keys(constructor._schema).length;
         constructor._schema[field] = type;
 
-        /** 
-         * TODO: `isSchema` / `isArray` / `isMap` is repeated on many places! 
-         * need to refactor all of them. 
-         */
-        const isArray = Array.isArray(type);
-        const isMap = !isArray && (type as any).map;
-
+        const isPrimitive = typeof(type) === "string";
         const fieldCached = `_${field}`;
 
         Object.defineProperty(target, fieldCached, {
@@ -745,16 +740,16 @@ export function type (type: DefinitionType) {
                 /**
                  * Create Proxy for array or map items
                  */
-                if (isArray || isMap) {
+                if (!isPrimitive) {
                     value = new Proxy(value, {
                         get: (obj, prop) => obj[prop],
                         set: (obj, prop, setValue) => {
                             if (prop !== "length") {
                                 // ensure new value has a parent
-                                const key = (isArray) ? Number(prop) : String(prop);
+                                const key = (type === ArraySchema) ? Number(prop) : String(prop);
 
                                 if (setValue.$parentField && setValue.$parentField[1] !== key) {
-                                    if (isMap) {
+                                    if (type === MapSchema) {
                                         const indexChange = this[`${fieldCached}`]._indexes[setValue.$parentField[1]];
                                         setValue.$parentIndexChange = indexChange;
 
@@ -804,7 +799,7 @@ export function type (type: DefinitionType) {
 
                 this[fieldCached] = value;
 
-                if (Array.isArray(constructor._schema[field])) {
+                if (type === ArraySchema) {
                     // directly assigning an array of items as value.
                     const length = value.length;
 
@@ -823,7 +818,7 @@ export function type (type: DefinitionType) {
                         this.markAsChanged(field, value[i]);
                     }
 
-                } else if ((constructor._schema[field] as any).map) {
+                } else if (type === MapSchema) {
                     // directly assigning a map
                     for (let key in value) {
                         if (value[key] instanceof Schema) {
@@ -837,7 +832,7 @@ export function type (type: DefinitionType) {
 
                     }
 
-                } else if (typeof(constructor._schema[field]) === "function") {
+                } else if (typeof(type) === "function") {
                     // directly assigning a `Schema` object
                     value.$parent = this;
                     value.$parentField = field;

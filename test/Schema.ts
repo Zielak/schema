@@ -28,9 +28,9 @@ export class State extends Schema {
   @type(Player)
   player: Player;
 
-  @type([ Player ])
+  @type(ArraySchema, Player)
   arrayOfPlayers: ArraySchema<Player>;
 
-  @type({ map: Player })
+  @type(MapSchema, Player)
   mapOfPlayers: MapSchema<Player>;
 }
