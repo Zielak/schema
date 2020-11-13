@@ -180,7 +180,27 @@ export class ArraySchema<V=any> implements Array<V>, SchemaDecoderCallbacks {
         this.$changes.delete(index);
         this.$indexes.delete(index);
 
-        return this.$items.delete(index);
+        const deleted = this.$items.delete(index);
+
+        // validate indexes
+        const remainingItems = [];
+        this.$indexes.forEach((itemIndex, i) => {
+            remainingItems[itemIndex] = this.$items.get(itemIndex);
+        })
+
+        remainingItems.forEach((value, itemIndex) => {
+            if (itemIndex >= index) {
+                this.$changes.change(itemIndex, OPERATION.REPLACE);
+                this.setAt(itemIndex - 1, value);
+            }
+            if (itemIndex === remainingItems.length - 1) {
+                this.$changes.delete(itemIndex);
+                this.$indexes.delete(itemIndex);
+                this.$items.delete(itemIndex);
+            }
+        });
+
+        return deleted;
     }
 
     clear(isDecoding?: boolean) {
